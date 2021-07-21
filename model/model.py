@@ -70,11 +70,11 @@ class Lectura(Base):
 
     id = Column(Integer, Sequence('lectura_id_seq'), primary_key=True)
     fecha = Column(Date)
-    lecturaAnterior = Column(Float)
     lecturaActual = Column(Float)
     consumo = Column(Float)
     exceso = Column(Float)
     subtotal = Column(Float)
+    estado = Column(String(10))
     derechoAgua = Column(Integer, ForeignKey(DerechoAgua.id))
 
 

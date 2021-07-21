@@ -4,7 +4,7 @@ from sqlalchemy.exc import MultipleResultsFound, NoResultFound
 
 from datetime import datetime
 
-from model.model import Base, Usuario, Trabajo, DerechoAgua,Lectura
+from model.model import Base, Usuario, Trabajo, DerechoAgua,Lectura,Pago
 from sqlalchemy import create_engine
 from sqlalchemy.orm import session, sessionmaker
 
@@ -19,7 +19,7 @@ def create_session():
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from starlette.middleware.cors import CORSMiddleware
-from model.api_model import Lectura_Create_API, Usuario_API, Usuario_Login_API, Usuario_Get, Derecho_Create_API, Derecho_Get
+from model.api_model import Lectura_Create_API, Usuario_API, Usuario_Login_API, Usuario_Get, Derecho_Create_API, Derecho_Get,Pago_Api_Exec
 
 app = FastAPI()
 
@@ -94,16 +94,16 @@ async def derecho_create(derecho: Derecho_Create_API):
 async def lectura_create(lectura:Lectura_Create_API):
     session = create_session()
     try:
-        maxid = 0
         result = session.query(Lectura).filter(Lectura.derechoAgua == lectura.derechoAgua)
-        print("value",maxid)
-        maxid= max(lecture.id for lecture in result)
-        last_lecture= Lectura()
-        print("value",maxid)
-        for lecture in result:
-            if(lecture.id==maxid):
-                last_lecture=lecture
-        lectura= Lectura(fecha= datetime.strptime(lectura.fecha,'%d/%m/%Y'),lecturaAnterior=last_lecture.lecturaActual,lecturaActual=lectura.lecturaActual,consumo=lectura.lecturaActual-last_lecture.lecturaActual,exceso=lectura.exceso,derechoAgua=lectura.derechoAgua)
+        maxid= max((lecture.id for lecture in result),default=0)
+        if(maxid!=0):
+            last_lecture= Lectura()
+            for lecture in result:
+                if(lecture.id==maxid):
+                    last_lecture=lecture
+            lectura= Lectura(fecha= datetime.strptime(lectura.fecha,'%d/%m/%Y'),lecturaActual=lectura.lecturaActual,consumo=lectura.lecturaActual-last_lecture.lecturaActual,exceso=lectura.exceso,estado="pendiente",derechoAgua=lectura.derechoAgua)
+        else:
+            lectura= Lectura(fecha= datetime.strptime(lectura.fecha,'%d/%m/%Y'),lecturaActual=lectura.lecturaActual,consumo=lectura.lecturaActual,exceso=lectura.exceso,estado="pendiente",derechoAgua=lectura.derechoAgua)
         session.add(lectura)
         session.commit()
         session.close()
@@ -112,17 +112,33 @@ async def lectura_create(lectura:Lectura_Create_API):
         print(e)
         print('ALGO SALIO MAL REVISA EL METODO LECTURA CREATE')
     ...
-
-@app.get('/lectura/usuario/', response_model=list[Lectura_Create_API])
-async def lectura_get(derecho: int):
+@app.post('/pago/ejecutar')
+async def pago_create(pago:Pago_Api_Exec):
     session = create_session()
     try:
-        result = session.query(Lectura).filter(Lectura.derechoAgua == derecho)
+        pago= Pago(atraso=pago.atraso,otros=pago.otros,mensual=pago.mensual, mora=pago.mora,total=pago.total,lectura=pago.lectura)
+        session.add(pago)
+        session.query(Lectura).filter(Lectura.id == pago.lectura).update({'estado': 'liquidado'})
+        session.commit()
+        session.close()
+        return {'RESPUESTA':'OK'}
+    except Exception as e:
+        print(e)
+        print('Review payment create method')
+    ...
+#Get user lecturas for payment
+@app.get('/lectura/usuario/', response_model=list[Lectura_Create_API])
+async def lectura_get(cedula: str):
+    session = create_session()
+    try:
+        derecho = session.query(DerechoAgua).filter(DerechoAgua.usuario_id == cedula).one_or_none()
+        result = session.query(Lectura).filter(Lectura.derechoAgua == derecho.id)
         lecturas = []
         for rst in result:
-            lectura = {'id': rst.id, 'fecha': str(rst.fecha), 'lecturaAnterior': rst.lecturaAnterior,
+            if(rst.estado=="pendiente"):
+                lectura = {'id': rst.id, 'fecha': str(rst.fecha), 'estado': rst.estado,
                        'lecturaActual': rst.lecturaActual,'consumo':rst.consumo,'exceso':rst.exceso,'derechoAgua':rst.derechoAgua}
-            lecturas.append(lectura)
+                lecturas.append(lectura)
         session.close()
         return lecturas
     except Exception as e:

@@ -43,9 +43,19 @@ class Derecho_Get(BaseModel):
     usuario_id: str
 
 class Lectura_Create_API(BaseModel):
+    id:int
     fecha:str
-    lecturaAnterior:float
+    estado:str
     lecturaActual:float
     consumo:float
     exceso:float
     derechoAgua:int
+
+class Pago_Api_Exec(BaseModel):
+    id:int
+    atraso:float
+    otros:float
+    mensual:float
+    mora:float
+    total:float
+    lectura:int
