@@ -59,3 +59,8 @@ class Pago_Api_Exec(BaseModel):
     mora:float
     total:float
     lectura:int
+
+class Trabjo_Api_All(BaseModel):
+    id:int
+    fecha:str
+    descripcion:str

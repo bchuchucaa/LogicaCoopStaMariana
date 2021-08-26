@@ -1,7 +1,7 @@
 from pydantic.errors import FloatError
 import uvicorn
 from sqlalchemy.exc import MultipleResultsFound, NoResultFound
-
+from fastapi import status
 from datetime import datetime
 
 from model.model import Base, Usuario, Trabajo, DerechoAgua,Lectura,Pago
@@ -19,7 +19,7 @@ def create_session():
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from starlette.middleware.cors import CORSMiddleware
-from model.api_model import Lectura_Create_API, Usuario_API, Usuario_Login_API, Usuario_Get, Derecho_Create_API, Derecho_Get,Pago_Api_Exec
+from model.api_model import Lectura_Create_API, Usuario_API, Usuario_Login_API, Usuario_Get, Derecho_Create_API, Derecho_Get,Pago_Api_Exec,Trabjo_Api_All
 
 app = FastAPI()
 
@@ -89,6 +89,25 @@ async def derecho_create(derecho: Derecho_Create_API):
         print(e)
         print('ERRORRRRRRRRRRRRRR')
     ...
+@app.post('/lectura/verification')
+async def lectura_payment_verification(pago:Pago_Api_Exec):
+    session = create_session()
+    try:
+        valuePerMonth=2.0;
+        valueExceso=10.0;
+        #Need authorization to modify
+        print(pago.lectura,"id lectura")
+        result: Lectura = session.query(Lectura).filter(Lectura.id == pago.lectura).one()
+        calcTotal = 10.0+valuePerMonth if result.exceso != 0 else valuePerMonth
+        resultpayment= Pago(atraso=pago.atraso,otros=pago.otros,mensual=valuePerMonth, mora=pago.mora,total=calcTotal,lectura=pago.lectura)
+        session.close()
+        pay= {'id':0,'atraso':0.0,'otros':0.0,'mensual':valuePerMonth,'mora':0.0,'total':resultpayment.total,'lectura':pago.lectura}
+        return pay
+    except Exception as e:
+        print(e)
+        print('Review payment create method')
+
+
 
 @app.post('/lectura/create')
 async def lectura_create(lectura:Lectura_Create_API):
@@ -96,12 +115,15 @@ async def lectura_create(lectura:Lectura_Create_API):
     try:
         result = session.query(Lectura).filter(Lectura.derechoAgua == lectura.derechoAgua)
         maxid= max((lecture.id for lecture in result),default=0)
+        limConsumo=200
         if(maxid!=0):
             last_lecture= Lectura()
             for lecture in result:
                 if(lecture.id==maxid):
                     last_lecture=lecture
-            lectura= Lectura(fecha= datetime.strptime(lectura.fecha,'%d/%m/%Y'),lecturaActual=lectura.lecturaActual,consumo=lectura.lecturaActual-last_lecture.lecturaActual,exceso=lectura.exceso,estado="pendiente",derechoAgua=lectura.derechoAgua)
+            consume=lectura.lecturaActual-last_lecture.lecturaActual
+            excess=consume-limConsumo if consume>limConsumo else 0;
+            lectura= Lectura(fecha= datetime.strptime(lectura.fecha,'%d/%m/%Y'),lecturaActual=lectura.lecturaActual,consumo=consume,exceso=excess,estado="pendiente",derechoAgua=lectura.derechoAgua)
         else:
             lectura= Lectura(fecha= datetime.strptime(lectura.fecha,'%d/%m/%Y'),lecturaActual=lectura.lecturaActual,consumo=lectura.lecturaActual,exceso=lectura.exceso,estado="pendiente",derechoAgua=lectura.derechoAgua)
         session.add(lectura)
@@ -116,9 +138,14 @@ async def lectura_create(lectura:Lectura_Create_API):
 async def pago_create(pago:Pago_Api_Exec):
     session = create_session()
     try:
-        pago= Pago(atraso=pago.atraso,otros=pago.otros,mensual=pago.mensual, mora=pago.mora,total=pago.total,lectura=pago.lectura)
-        session.add(pago)
+        valuePerMonth=2.0;
+        valueExceso=10.0;
+        #Need authorization to modify
+        result: Lectura = session.query(Lectura).filter(Lectura.id == pago.lectura).one()
         session.query(Lectura).filter(Lectura.id == pago.lectura).update({'estado': 'liquidado'})
+        calcTotal = 10.0+valuePerMonth if result.exceso != 0 else valuePerMonth
+        pago= Pago(atraso=pago.atraso,otros=pago.otros,mensual=valuePerMonth, mora=pago.mora,total=calcTotal,lectura=pago.lectura)
+        session.add(pago)
         session.commit()
         session.close()
         return {'RESPUESTA':'OK'}
@@ -187,6 +214,26 @@ async def derecho_get(cedula: str):
         return usuarios
     except Exception as e:
         print(e)
+
+@app.get('/trabajos/all',response_model=list[Trabjo_Api_All])
+async def trabajo_get_all():
+    session = create_session()
+    try:
+        result= session.query(Trabajo).all()
+        trabajos=[]
+        for tr in result:
+            print(tr)
+            trabajo= {'id':tr.id,'descripcion':tr.descripcion,'fecha':tr.fecha}
+            trabajos.append(trabajo)
+            print('nothing')
+        return trabajos
+    except Exception as e:
+        print(e)
+
+@app.get("/scorpion")
+async def root():
+    return {"message": "Hello World"}
+
 
 if __name__ == '__main__':
     uvicorn.run("main:app", host='127.0.0.1', reload=True)
